@@ -180,3 +180,6 @@ CKEDITOR_5_CONFIGS = {
         'toolbar': ['bold', 'italic', 'link'],
     },
 }
+
+
+AUTH_USER_MODEL = 'testapp.CustomUser'
