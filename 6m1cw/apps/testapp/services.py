@@ -1,43 +1,71 @@
+
 import requests
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.tokens import RefreshToken
-from django.conf import settings
 
 User = get_user_model()
 
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
+
+
 def google_auth_service(code: str) -> dict:
-    token_url = "https://oauth2.googleapis.com/token"
+
+    if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
+        raise ValueError("Google OAuth не настроен.")
+
     payload = {
-        'code': code,
-        'client_id': settings.GOOGLE_CLIENT_ID,
-        'client_secret': settings.GOOGLE_CLIENT_SECRET,
-        'redirect_uri': 'postmessage',
-        'grant_type': 'authorization_code',
+        "code": code,
+        "client_id": settings.GOOGLE_CLIENT_ID,
+        "client_secret": settings.GOOGLE_CLIENT_SECRET,
+        "redirect_uri": settings.GOOGLE_REDIRECT_URI,
+        "grant_type": "authorization_code",
     }
 
-    token_response = requests.post(token_url, data=payload)
-    token_data = token_response.json()
+    try:
+        token_response = requests.post(
+            GOOGLE_TOKEN_URL,
+            data=payload,
+            timeout=10
+        )
+        token_response.raise_for_status()
+        token_data = token_response.json()
 
-    if 'access_token' not in token_data:
-        raise ValueError(f"Ошибка обмена кода с Google: {token_data}")
+        access_token = token_data.get("access_token")
 
-    userinfo_url = "https://www.googleapis.com/oauth2/v2/userinfo"
-    headers = {'Authorization': f'Bearer {token_data["access_token"]}'}
-    userinfo_response = requests.get(userinfo_url, headers=headers)
-    user_data = userinfo_response.json()
+        if not access_token:
+            raise ValueError("Google не вернул access token.")
 
-    email = user_data.get('email')
-    if not email:
-        raise ValueError("Google профиль не содержит email.")
+        user_response = requests.get(
+            GOOGLE_USERINFO_URL,
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10
+        )
+        user_response.raise_for_status()
+        user_data = user_response.json()
+
+    except requests.RequestException as exc:
+        raise ValueError("Ошибка соединения с Google.") from exc
+
+    email = user_data.get("email")
+
+    if not email or user_data.get("verified_email") is not True:
+        raise ValueError("Google email не подтверждён.")
+
+    email = User.objects.normalize_email(email.strip()).lower()
 
     user, created = User.objects.get_or_create(
         email=email,
         defaults={
-            'role': User.Role.STUDENT,
-            'first_name': user_data.get('given_name', ''),
-            'last_name': user_data.get('family_name', ''),
+            "role": User.Role.STUDENT,
+            "first_name": user_data.get("given_name", ""),
+            "last_name": user_data.get("family_name", ""),
         }
     )
+
+    if not user.is_active:
+        raise ValueError("Пользователь отключён.")
 
     refresh = RefreshToken.for_user(user)
 

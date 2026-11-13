@@ -26,5 +26,8 @@ class GoogleAuthView(APIView):
         try:
             data = google_auth_service(code)
             return Response(data, status=status.HTTP_200_OK)
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except ValueError as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
