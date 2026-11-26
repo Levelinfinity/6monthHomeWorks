@@ -1,0 +1,31 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: backend-6m8dz
+    restart: unless-stopped
+    env_file:
+      - .env
+    expose:
+      - "8000"
+    volumes:
+      - back_static:/app/back_static
+      - back_media:/app/back_media
+
+  nginx:
+    image: nginx:alpine
+    container_name: nginx-6m8dz
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - back_static:/app/back_static:ro
+      - back_media:/app/back_media:ro
+    depends_on:
+      - backend
+
+volumes:
+  back_static:
+  back_media:
